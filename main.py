@@ -39,28 +39,9 @@ app.add_middleware(
 genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
 model = genai.GenerativeModel('gemini-1.5-flash')
 
-# 캐릭터 프롬프트 로드 함수
-def load_character_prompt():
-    """specific_character.md 파일에서 캐릭터 설정을 로드"""
-    try:
-        # 절대 경로로 파일 찾기
-        import os
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        character_file_path = os.path.join(current_dir, 'specific_character.md')
-
-        with open(character_file_path, 'r', encoding='utf-8') as f:
-            character_prompt = f.read()
-        logger.info(f"Character prompt loaded successfully from {character_file_path}")
-        return character_prompt
-    except FileNotFoundError:
-        logger.warning(f"specific_character.md not found at {character_file_path}, using default prompt")
-        return get_default_prompt()
-    except Exception as e:
-        logger.error(f"Error loading character prompt: {e}")
-        return get_default_prompt()
-
-def get_default_prompt():
-    """기본 캐릭터 프롬프트 (fallback)"""
+# 캐릭터 프롬프트
+def get_character_prompt():
+    """캐릭터 프롬프트 반환"""
     return """
 당신은 곽승연입니다.
 
@@ -88,8 +69,8 @@ def get_default_prompt():
 → "잘 모르겠어요 ㅠㅠ 저는 춤에 더 관심이 많거든요!" 같은 식으로 간단히 답변하세요.
 """
 
-# 앱 시작시 캐릭터 프롬프트 로드
-SYSTEM_PROMPT = load_character_prompt()
+# 캐릭터 프롬프트 설정
+SYSTEM_PROMPT = get_character_prompt()
 
 # 메모리 저장소로 변경
 conversations_store = {}
@@ -357,7 +338,7 @@ async def reload_character():
     """캐릭터 프롬프트 다시 로드"""
     global SYSTEM_PROMPT
     try:
-        SYSTEM_PROMPT = load_character_prompt()
+        SYSTEM_PROMPT = get_character_prompt()
         logger.info("Character prompt reloaded successfully")
         return {"success": True, "message": "캐릭터 설정이 다시 로드되었습니다."}
     except Exception as e:
