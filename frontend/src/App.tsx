@@ -38,7 +38,7 @@ interface Session {
   messages: Message[];
 }
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_URL || window.location.origin;
 
 function App() {
   // 세션 관리 초기화
