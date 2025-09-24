@@ -30,7 +30,12 @@ app = FastAPI(title="AI Agent Chatbot", version="1.0.0")
 # CORS 설정
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "https://dance-chat.vercel.app",
+        "https://dance-chat-git-main-clonoy.vercel.app"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -426,3 +431,6 @@ async def reload_character():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+# Vercel Serverless Function entry point
+app = app
