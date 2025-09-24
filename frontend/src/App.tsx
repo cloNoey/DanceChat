@@ -38,7 +38,7 @@ interface Session {
   messages: Message[];
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || window.location.origin;
+const API_BASE_URL = 'https://dance-chat-back.vercel.app';
 
 function App() {
   // 세션 관리 초기화
@@ -435,7 +435,7 @@ function App() {
                     animation: 'blink 1s infinite'
                   }}>|</span>
                 )}
-              </div>
+      </div>
               {!message.isUser && message.showFeedback && (
                 <FeedbackButtons>
                   {[1, 2, 3].map((rating) => (
