@@ -97,48 +97,19 @@ def get_default_prompt():
 # 앱 시작시 캐릭터 프롬프트 로드
 SYSTEM_PROMPT = load_character_prompt()
 
-# 데이터베이스 초기화
-def init_db():
-    conn = sqlite3.connect('chatbot.db')
-    cursor = conn.cursor()
-    
-    # 대화 로그 테이블
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS conversations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT NOT NULL,
-            user_message TEXT NOT NULL,
-            bot_message TEXT NOT NULL,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    
-    # 사용자 피드백 테이블
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS feedback (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT NOT NULL,
-            message_id INTEGER,
-            rating INTEGER,
-            comment TEXT,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    
-    conn.commit()
-    conn.close()
-    logger.info("Database initialized successfully")
+# 메모리 저장소로 변경
+conversations_store = {}
+feedback_store = []
 
-@contextmanager
-def get_db_connection():
-    conn = sqlite3.connect('chatbot.db')
-    try:
-        yield conn
-    finally:
-        conn.close()
-
-# 앱 시작시 DB 초기화
-init_db()
+def save_to_memory_store(session_id: str, user_message: str, bot_message: str):
+    if session_id not in conversations_store:
+        conversations_store[session_id] = []
+    conversations_store[session_id].append({
+        'user_message': user_message,
+        'bot_message': bot_message,
+        'timestamp': datetime.now().isoformat()
+    })
+    return len(conversations_store[session_id])
 
 # 메모리 캐시 (빠른 접근용)
 conversations = {}
@@ -160,36 +131,23 @@ class FeedbackRequest(BaseModel):
     comment: Optional[str] = None
 
 def save_conversation_to_db(session_id: str, user_message: str, bot_message: str):
-    """대화를 데이터베이스에 저장"""
+    """대화를 메모리에 저장"""
     try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO conversations (session_id, user_message, bot_message)
-                VALUES (?, ?, ?)
-            ''', (session_id, user_message, bot_message))
-            conn.commit()
-            return cursor.lastrowid
+        return save_to_memory_store(session_id, user_message, bot_message)
     except Exception as e:
-        logger.error(f"DB 저장 실패: {e}")
+        logger.error(f"메모리 저장 실패: {e}")
         return None
 
 def get_conversation_history(session_id: str, limit: int = 10):
     """세션별 대화 기록 조회"""
     try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT user_message, bot_message 
-                FROM conversations 
-                WHERE session_id = ? 
-                ORDER BY timestamp DESC 
-                LIMIT ?
-            ''', (session_id, limit))
-            rows = cursor.fetchall()
-            return [{"user": row[0], "bot": row[1]} for row in reversed(rows)]
+        if session_id not in conversations_store:
+            return []
+        conversations = conversations_store[session_id][-limit:]
+        return [{"user": conv["user_message"], "bot": conv["bot_message"]} 
+                for conv in conversations]
     except Exception as e:
-        logger.error(f"DB 조회 실패: {e}")
+        logger.error(f"대화 기록 조회 실패: {e}")
         return []
 
 @app.post("/chat", response_model=ChatResponse)
@@ -326,13 +284,13 @@ async def chat_stream(request: ChatRequest):
 async def submit_feedback(request: FeedbackRequest):
     """사용자 피드백 수집"""
     try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO feedback (session_id, message_id, rating, comment)
-                VALUES (?, ?, ?, ?)
-            ''', (request.session_id, request.message_id, request.rating, request.comment))
-            conn.commit()
+        feedback_store.append({
+            "session_id": request.session_id,
+            "message_id": request.message_id,
+            "rating": request.rating,
+            "comment": request.comment,
+            "timestamp": datetime.now().isoformat()
+        })
         
         logger.info(f"Feedback received: {request.rating}/5 from {request.session_id}")
         return {"success": True, "message": "피드백이 저장되었습니다."}
@@ -360,24 +318,17 @@ async def health_check():
 async def get_stats():
     """통계 조회"""
     try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            
-            # 전체 대화 수
-            cursor.execute('SELECT COUNT(*) FROM conversations')
-            total_conversations = cursor.fetchone()[0]
-            
-            # 활성 세션 수
-            cursor.execute('SELECT COUNT(DISTINCT session_id) FROM conversations')
-            total_sessions = cursor.fetchone()[0]
-            
-            # 오늘 대화 수
-            cursor.execute('''
-                SELECT COUNT(*) FROM conversations 
-                WHERE date(timestamp) = date('now')
-            ''')
-            today_conversations = cursor.fetchone()[0]
-            
+        total_conversations = sum(len(convs) for convs in conversations_store.values())
+        total_sessions = len(conversations_store)
+        
+        # 오늘 대화 수 계산
+        today = datetime.now().date()
+        today_conversations = sum(
+            1 for convs in conversations_store.values()
+            for conv in convs
+            if datetime.fromisoformat(conv["timestamp"]).date() == today
+        )
+        
         return {
             "active_memory_sessions": len(conversations),
             "total_sessions": total_sessions,
@@ -392,24 +343,15 @@ async def get_stats():
 async def export_conversations():
     """대화 데이터 내보내기 (WoZ 분석용)"""
     try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT session_id, user_message, bot_message, timestamp
-                FROM conversations
-                ORDER BY timestamp DESC
-            ''')
-            rows = cursor.fetchall()
-            
-        conversations_data = [
-            {
-                "session_id": row[0],
-                "user_message": row[1],
-                "bot_message": row[2],
-                "timestamp": row[3]
-            }
-            for row in rows
-        ]
+        conversations_data = []
+        for session_id, convs in conversations_store.items():
+            for conv in convs:
+                conversations_data.append({
+                    "session_id": session_id,
+                    "user_message": conv["user_message"],
+                    "bot_message": conv["bot_message"],
+                    "timestamp": conv["timestamp"]
+                })
         
         return {"conversations": conversations_data}
     except Exception as e:
