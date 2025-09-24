@@ -324,7 +324,7 @@ async def reload_character():
         logger.error(f"Character reload error: {e}")
         raise HTTPException(status_code=500, detail="캐릭터 설정 로드 실패")
 
-# Vercel Handler
-def handler(request, response):
-    """Vercel serverless function handler"""
-    return app
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
