@@ -25,7 +25,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="AI Agent Chatbot", version="1.0.0")
+app = FastAPI(title="AI Agent Chatbot", version="1.0.1")
 
 # CORS 설정
 app.add_middleware(
