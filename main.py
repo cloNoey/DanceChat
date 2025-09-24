@@ -19,7 +19,6 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('chatbot.log'),
         logging.StreamHandler()
     ]
 )
@@ -30,12 +29,7 @@ app = FastAPI(title="AI Agent Chatbot", version="1.0.1")
 # CORS 설정
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "https://dance-chat.vercel.app",
-        "https://dance-chat-git-main-clonoy.vercel.app"
-    ],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
