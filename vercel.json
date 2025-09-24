@@ -5,71 +5,11 @@
       "src": "main.py",
       "use": "@vercel/python",
       "config": {
-        "runtime": "python3.11",
-        "buildCommand": "pip install -r requirements.txt",
-        "maxLambdaSize": "15mb"
+        "runtime": "python3.11"
       }
     }
   ],
-  "headers": [
-    {
-      "source": "/(.*)",
-      "headers": [
-        { "key": "Access-Control-Allow-Origin", "value": "*" },
-        { "key": "Access-Control-Allow-Methods", "value": "GET,OPTIONS,PATCH,DELETE,POST,PUT" },
-        { "key": "Access-Control-Allow-Headers", "value": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version" }
-      ]
-    }
-  ],
   "routes": [
-    {
-      "src": "/docs",
-      "dest": "main.py"
-    },
-    {
-      "src": "/openapi.json",
-      "dest": "main.py"
-    },
-    {
-      "src": "/chat",
-      "methods": ["POST"],
-      "dest": "main.py"
-    },
-    {
-      "src": "/chat/stream",
-      "methods": ["GET", "POST", "OPTIONS"],
-      "dest": "main.py"
-    },
-    {
-      "src": "/feedback",
-      "methods": ["POST"],
-      "dest": "main.py"
-    },
-    {
-      "src": "/reset",
-      "methods": ["POST"],
-      "dest": "main.py"
-    },
-    {
-      "src": "/stats",
-      "methods": ["GET"],
-      "dest": "main.py"
-    },
-    {
-      "src": "/export",
-      "methods": ["GET"],
-      "dest": "main.py"
-    },
-    {
-      "src": "/health",
-      "methods": ["GET"],
-      "dest": "main.py"
-    },
-    {
-      "src": "/reload-character",
-      "methods": ["GET"],
-      "dest": "main.py"
-    },
     {
       "src": "/(.*)",
       "dest": "main.py"

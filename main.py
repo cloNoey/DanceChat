@@ -1,4 +1,3 @@
-# main.py
 import os
 import json
 import logging
@@ -8,18 +7,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import google.generativeai as genai
-from dotenv import load_dotenv
-import sqlite3
-from contextlib import contextmanager
 
-load_dotenv()
-
-# 로깅 설정
+# 로깅 설정 (Vercel 환경에 최적화)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-handler = logging.StreamHandler()
-handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-logger.addHandler(handler)
 
 app = FastAPI(title="AI Agent Chatbot", version="1.0.1")
 
@@ -36,42 +27,24 @@ app.add_middleware(
 genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
 model = genai.GenerativeModel('gemini-1.5-flash')
 
-# 캐릭터 프롬프트
+# 캐릭터 프롬프트 (파일 읽기 대신 환경변수나 직접 정의)
 def get_character_prompt():
     """캐릭터 프롬프트 반환"""
-    return """
-당신은 곽승연입니다.
-
-## 기본 정보
-- 이름: 곽승연
-- 나이: 21세
-- 전공: 자유전공학부
-- 거주지: 서울 관악구
-- 주요 활동: 서울대 댄스동아리 (가장 중요한 정체성)
-
-## 성격 특성
-- 핵심 성격: 열정적, 친근함, 약간의 4차원, 진솔함
-- 말투: 친근하고 활발함, 댄스 용어를 자연스럽게 사용
-- 관심사: K-pop 댄스, 안무 창작, 캠퍼스 생활, 맛집 탐방
-- 가치관: 열정과 노력, 함께하는 즐거움, 춤을 통한 자기표현
-
-## 대화 규칙 및 응답 가이드라인
-
-### 춤/댄스동아리 관련 질문 (상세 응답)
-- 춤, 댄스, 안무, 동아리 활동에 대한 질문
-→ 이런 주제에는 열정적이고 구체적으로 답변하세요.
-
-### 춤과 무관한 전문적 주제 (간단한 응답)
-- AI, 프로그래밍, 학술적 내용 등
-→ "잘 모르겠어요 ㅠㅠ 저는 춤에 더 관심이 많거든요!" 같은 식으로 간단히 답변하세요.
-"""
+    # Vercel에서는 파일 시스템 접근이 제한적이므로 환경변수나 직접 정의 사용
+    character_prompt = os.getenv('CHARACTER_PROMPT', '''
+당신은 승연이라는 이름의 AI 어시스턴트입니다.
+친근하고 도움이 되는 대화를 나누세요.
+사용자의 질문에 정확하고 유용한 답변을 제공하세요.
+''')
+    return character_prompt
 
 # 캐릭터 프롬프트 설정
 SYSTEM_PROMPT = get_character_prompt()
 
-# 메모리 저장소로 변경
+# 전역 메모리 저장소 (Vercel의 serverless 환경에서는 휘발성)
 conversations_store = {}
 feedback_store = []
+conversations = {}
 
 def save_to_memory_store(session_id: str, user_message: str, bot_message: str):
     if session_id not in conversations_store:
@@ -82,25 +55,6 @@ def save_to_memory_store(session_id: str, user_message: str, bot_message: str):
         'timestamp': datetime.now().isoformat()
     })
     return len(conversations_store[session_id])
-
-# 메모리 캐시 (빠른 접근용)
-conversations = {}
-
-# Request/Response 모델
-class ChatRequest(BaseModel):
-    message: str
-    session_id: Optional[str] = "default"
-
-class ChatResponse(BaseModel):
-    success: bool
-    message: Optional[str] = None
-    error: Optional[str] = None
-
-class FeedbackRequest(BaseModel):
-    session_id: str
-    message_id: Optional[int] = None
-    rating: int  # 1-5
-    comment: Optional[str] = None
 
 def save_conversation_to_db(session_id: str, user_message: str, bot_message: str):
     """대화를 메모리에 저장"""
@@ -122,6 +76,31 @@ def get_conversation_history(session_id: str, limit: int = 10):
         logger.error(f"대화 기록 조회 실패: {e}")
         return []
 
+# Request/Response 모델
+class ChatRequest(BaseModel):
+    message: str
+    session_id: Optional[str] = "default"
+
+class ChatResponse(BaseModel):
+    success: bool
+    message: Optional[str] = None
+    error: Optional[str] = None
+
+class FeedbackRequest(BaseModel):
+    session_id: str
+    message_id: Optional[int] = None
+    rating: int  # 1-5
+    comment: Optional[str] = None
+
+@app.get("/")
+async def root():
+    """루트 엔드포인트 - Vercel 헬스체크용"""
+    return {"message": "AI Agent Chatbot is running on Vercel", "status": "healthy"}
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "service": "AI Agent Chatbot", "platform": "Vercel"}
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     try:
@@ -136,7 +115,7 @@ async def chat(request: ChatRequest):
         
         logger.info(f"Session {session_id}: User message received")
         
-        # DB에서 대화 기록 조회 (메모리 캐시 우선)
+        # 대화 기록 조회
         if session_id in conversations:
             recent_conversations = conversations[session_id][-10:]
         else:
@@ -161,7 +140,7 @@ async def chat(request: ChatRequest):
             'bot': bot_message
         })
         
-        # DB에 저장
+        # 저장
         message_id = save_conversation_to_db(session_id, user_message, bot_message)
         
         logger.info(f"Session {session_id}: Response generated successfully")
@@ -196,7 +175,7 @@ async def chat_stream(request: ChatRequest):
             
             logger.info(f"Session {session_id}: Streaming chat started")
             
-            # DB에서 대화 기록 조회
+            # 대화 기록 조회
             if session_id in conversations:
                 recent_conversations = conversations[session_id][-10:]
             else:
@@ -233,7 +212,7 @@ async def chat_stream(request: ChatRequest):
                 'bot': full_message
             })
             
-            # DB에 저장
+            # 저장
             save_conversation_to_db(session_id, user_message, full_message)
             
             logger.info(f"Session {session_id}: Streaming completed")
@@ -277,14 +256,12 @@ async def reset_conversation(request: dict):
         session_id = request.get('session_id', 'default')
         if session_id in conversations:
             del conversations[session_id]
+        if session_id in conversations_store:
+            del conversations_store[session_id]
         logger.info(f"Session {session_id} reset")
         return {"success": True, "message": "대화 기록이 초기화되었습니다."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"초기화 실패: {str(e)}")
-
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy", "service": "AI Agent Chatbot"}
 
 @app.get("/stats")
 async def get_stats():
@@ -302,10 +279,12 @@ async def get_stats():
         )
         
         return {
+            "platform": "Vercel",
             "active_memory_sessions": len(conversations),
             "total_sessions": total_sessions,
             "total_conversations": total_conversations,
-            "today_conversations": today_conversations
+            "today_conversations": today_conversations,
+            "note": "Data is volatile in serverless environment"
         }
     except Exception as e:
         logger.error(f"Stats error: {e}")
@@ -313,7 +292,7 @@ async def get_stats():
 
 @app.get("/export")
 async def export_conversations():
-    """대화 데이터 내보내기 (WoZ 분석용)"""
+    """대화 데이터 내보내기"""
     try:
         conversations_data = []
         for session_id, convs in conversations_store.items():
@@ -325,7 +304,10 @@ async def export_conversations():
                     "timestamp": conv["timestamp"]
                 })
         
-        return {"conversations": conversations_data}
+        return {
+            "conversations": conversations_data,
+            "note": "Data is volatile in Vercel serverless environment"
+        }
     except Exception as e:
         logger.error(f"Export error: {e}")
         raise HTTPException(status_code=500, detail="데이터 내보내기 실패")
@@ -342,9 +324,7 @@ async def reload_character():
         logger.error(f"Character reload error: {e}")
         raise HTTPException(status_code=500, detail="캐릭터 설정 로드 실패")
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-
-# Vercel Serverless Function entry point
-app = app
+# Vercel Handler
+def handler(request, response):
+    """Vercel serverless function handler"""
+    return app
